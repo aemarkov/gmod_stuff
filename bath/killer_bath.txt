@@ -5,7 +5,7 @@
 @trigger 
 
 
-interval(100)
+interval(10)
 
 Me = entity()
 Base = Me:isWeldedTo()
@@ -71,7 +71,7 @@ function setup()
     print("Setup")
     #MovePID = init_pid_3d(1, 0, 0)
     #RotPID = init_pid_3d(50000, 0, -30000)
-    RotPID = init_pid_3d(10000, 0, -5000)
+    RotPID = init_pid_3d(10000, 0, -100000)
 }
 
 function loop()
@@ -84,12 +84,12 @@ function loop()
     # Yaw error
     # Just bearing - signed angle between Base forward direction and target position
     #                in horizontal plane
-    YawErr = Base:bearing(Player:pos())
+    local YawErr = -Base:bearing(Player:pos())
     
     # Pitch error
      # Just bearing - signed angle between Base forward direction and target position
     #                in vertical error
-    PitchErr = Base:elevation(Player:pos())
+    local PitchErr = -Base:elevation(Player:pos())
     
     # Roll error
     # This is quite difficult
@@ -97,15 +97,21 @@ function loop()
     #
     # Right vector and "ideal" up vector calculation
     # Ref: https://learnopengl.com/Getting-started/Camera
-    Right = vec(0, 0, 1):cross(Base:eye())
-    Up0 = Base:eye():cross(Right)
+    local Right = vec(0, 0, 1):cross(Base:eye())
+    local Up0 = Base:eye():cross(Right)
+    # Transform to local frame
+    # Otherwise angle sing works incorrectly
+    Up0 = Base:toLocalAxis(Up0)
+    
+    
     #holoCreate(0, Base:pos() + Up0 * 50, vec(0.3, 0.3, 0.3))
     #holoCreate(1, Base:pos() + Base:up() * 50, vec(0.3, 0.3, 0.3))
     #
     # Signed angle between vectors in 3D
     # Angle value clculaion (https://www.researchgate.net/post/What_is_the_mathematical_proof_for_the_formula_to_find_angle_between_3_points_in_an_image)
     # Well, maybe classic arrcos + dot product will be better?
-    Up = Base:up()
+    # Up in local is just (0, 0, 1)
+    Up = vec(0, 0, 1)
     RollErr = atan(Up:cross(Up0):length(), Up:dot(Up0))
     #
     # The cross product can also be expressed as the formal determinant:
@@ -121,10 +127,13 @@ function loop()
     # Order of the vectors in the cross-prodcut is sign of the angle
     # Not very solid proof, but enough :)
     Det = det(matrix(vec(1, 1, 1), Up0, Up))
-    RollErr = sign(Det) * RollErr
+    RollErr = -sign(Det) * RollErr
+    print(format("%5.2f %5.2f %5.2f | %5.2f %5.2f %5.2f | %5.2f", Up0:x(), Up0:y(), Up0:z(), Up:x(), Up:y(), Up:z(), Det))
+    
+    # TODO: Up0 in local frame is (0, y, z). Just get atan without any det and cross?
     
     # Control
-    Rot = vec(RollErr, 0, 0)
+    Rot = vec(RollErr, PitchErr, YawErr)
     Rot0 = vec(0, 0, 0)
     Torque = calc_pid_3d(RotPID, Rot, Rot0)
     Base:applyTorque(Torque)
