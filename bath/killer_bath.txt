@@ -1,0 +1,138 @@
+@name flying_baths
+@inputs W S A D
+@outputs 
+@persist MovePID:table RotPID:table
+@trigger 
+
+
+interval(100)
+
+Me = entity()
+Base = Me:isWeldedTo()
+Player = owner()
+
+##############################################################
+# PID
+##############################################################
+
+function table init_pid(P:number, I:number, D:number)
+{
+    local PID = table()
+    PID["P_gain", number] = P
+    PID["I_gain", number] = I
+    PID["D_gain", number] = D
+    return PID
+}
+
+function number calc_pid(PID:table, X:number, X0:number) {
+    local Err = X - X0
+    
+    # P
+    local P_Term = PID["P_gain", number] * Err
+    
+    # I
+    local I_state = PID["I_state", number]
+    I_state += Err
+    I_state = min(I_state, PID["I_max", number])
+    I_state = max(I_state, PID["I_min", number])
+    PID["I_state", number] = I_state
+    local I_Term = PID["I_gain", number] * I_state
+    
+    # D
+    local D_Term = PID["D_gain", number] * (X - PID["D_state", number])
+    PID["D_state", number] = X
+    
+    return P_Term + I_Term - D_Term 
+}
+
+function table init_pid_3d(P:number, I:number, D:number)
+{
+    local PID = table()
+    PID["X", table] = init_pid(P, I, D)
+    PID["Y", table] = init_pid(P, I, D)
+    PID["Z", table] = init_pid(P, I, D)
+    return PID
+}
+
+function vector calc_pid_3d(PID:table, X:vector, X0:vector)
+{
+    local PX = calc_pid(PID["X", table], X:x(), X0:x())
+    local PY = calc_pid(PID["Y", table], X:y(), X0:y())
+    local PZ = calc_pid(PID["Z", table], X:z(), X0:z())
+    return vec(PX, PY, PZ)
+}
+
+##############################################################
+# MAIN
+##############################################################
+
+function setup()
+{
+    print("Setup")
+    #MovePID = init_pid_3d(1, 0, 0)
+    #RotPID = init_pid_3d(50000, 0, -30000)
+    RotPID = init_pid_3d(10000, 0, -5000)
+}
+
+function loop()
+{
+
+    # Rotation control
+    # Calculate torque for Yaw, Pitch, Roll using PID-controller
+    # Angles used as error values
+    
+    # Yaw error
+    # Just bearing - signed angle between Base forward direction and target position
+    #                in horizontal plane
+    YawErr = Base:bearing(Player:pos())
+    
+    # Pitch error
+     # Just bearing - signed angle between Base forward direction and target position
+    #                in vertical error
+    PitchErr = Base:elevation(Player:pos())
+    
+    # Roll error
+    # This is quite difficult
+    # Use angle between "ideal" up vector (without any roll) and real up vector (with roll)
+    #
+    # Right vector and "ideal" up vector calculation
+    # Ref: https://learnopengl.com/Getting-started/Camera
+    Right = vec(0, 0, 1):cross(Base:eye())
+    Up0 = Base:eye():cross(Right)
+    #holoCreate(0, Base:pos() + Up0 * 50, vec(0.3, 0.3, 0.3))
+    #holoCreate(1, Base:pos() + Base:up() * 50, vec(0.3, 0.3, 0.3))
+    #
+    # Signed angle between vectors in 3D
+    # Angle value clculaion (https://www.researchgate.net/post/What_is_the_mathematical_proof_for_the_formula_to_find_angle_between_3_points_in_an_image)
+    # Well, maybe classic arrcos + dot product will be better?
+    Up = Base:up()
+    RollErr = atan(Up:cross(Up0):length(), Up:dot(Up0))
+    #
+    # The cross product can also be expressed as the formal determinant:
+    #         | i  j   k |
+    # a x b = | ax ay az |
+    #         | bx by bz |
+    # (https://en.wikipedia.org/wiki/Cross_product#Matrix_notation)
+    # Just caluclate real determinant with "1 1 1" instead of "i j k". 
+    # If we change order of any two rows of the determinant it will change the sign
+    #               | 1  1   1 |     | 1  1  1  |
+    # sign(a x b) = | ax ay az | = - | bx by bz | = -sign(b x y)
+    #               | bx by bz |     | ax ay az |
+    # Order of the vectors in the cross-prodcut is sign of the angle
+    # Not very solid proof, but enough :)
+    Det = det(matrix(vec(1, 1, 1), Up0, Up))
+    RollErr = sign(Det) * RollErr
+    
+    # Control
+    Rot = vec(RollErr, 0, 0)
+    Rot0 = vec(0, 0, 0)
+    Torque = calc_pid_3d(RotPID, Rot, Rot0)
+    Base:applyTorque(Torque)
+}
+
+if(first()) {
+    setup()
+}
+else {
+    loop()
+}
