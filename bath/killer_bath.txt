@@ -1,4 +1,4 @@
-@name flying_baths
+@name killer_baths
 @inputs W S A D
 @outputs 
 @persist MovePID:table RotPID:table
@@ -24,11 +24,10 @@ function table init_pid(P:number, I:number, D:number)
     return PID
 }
 
-function number calc_pid(PID:table, X:number, X0:number) {
-    local Err = X - X0
-    
+function number calc_pid(PID:table, Err:number, X:number)
+{    
     # P
-    local P_Term = PID["P_gain", number] * Err
+    local P_Term = Err
     
     # I
     local I_state = PID["I_state", number]
@@ -42,7 +41,7 @@ function number calc_pid(PID:table, X:number, X0:number) {
     local D_Term = PID["D_gain", number] * (X - PID["D_state", number])
     PID["D_state", number] = X
     
-    return P_Term + I_Term - D_Term 
+    return PID["P_gain", number] * (P_Term + I_Term - D_Term)
 }
 
 function table init_pid_3d(P:number, I:number, D:number)
@@ -54,11 +53,11 @@ function table init_pid_3d(P:number, I:number, D:number)
     return PID
 }
 
-function vector calc_pid_3d(PID:table, X:vector, X0:vector)
+function vector calc_pid_3d(PID:table, Err:vector, X:vector)
 {
-    local PX = calc_pid(PID["X", table], X:x(), X0:x())
-    local PY = calc_pid(PID["Y", table], X:y(), X0:y())
-    local PZ = calc_pid(PID["Z", table], X:z(), X0:z())
+    local PX = calc_pid(PID["X", table], Err:x(), X:x())
+    local PY = calc_pid(PID["Y", table], Err:y(), X:y())
+    local PZ = calc_pid(PID["Z", table], Err:z(), X:z())
     return vec(PX, PY, PZ)
 }
 
@@ -71,25 +70,34 @@ function setup()
     print("Setup")
     #MovePID = init_pid_3d(1, 0, 0)
     #RotPID = init_pid_3d(50000, 0, -30000)
-    RotPID = init_pid_3d(10000, 0, -100000)
+    RotPID = init_pid_3d(10000, 0, 10)
 }
 
-function loop()
-{
 
-    # Rotation control
-    # Calculate torque for Yaw, Pitch, Roll using PID-controller
-    # Angles used as error values
-    
+# Rotation PID-control
+function rot_control(OrientationErr:vector)
+{
+    # Note: 
+    # I don't use Error and Value (for differentiation) for orientation control, just Error
+    # So, controllable value - error, targer always (0, 0, 0)
+    # I tried to use actual angles for D but not works
+    local Torque = calc_pid_3d(RotPID, -OrientationErr, OrientationErr)
+    Base:applyTorque(Torque)
+}   
+
+# Calculate orientation error between current entity Forwared direction target point
+# This error function is used to make target aim given point
+function vector calc_orientation_error_target(Target:vector)
+{
     # Yaw error
     # Just bearing - signed angle between Base forward direction and target position
     #                in horizontal plane
-    local YawErr = -Base:bearing(Player:pos())
+    local YawErr = Base:bearing(Target)
     
     # Pitch error
     # Just bearing - signed angle between Base forward direction and target position
     #                in vertical error
-    local PitchErr = -Base:elevation(Player:pos())
+    local PitchErr = Base:elevation(Target)
     
     # Roll error
     # This is quite difficult
@@ -104,13 +112,15 @@ function loop()
     # This is close to Bearing calculation in E2 standart function
     Up0 = Base:toLocalAxis(Up0)
     local Up = vec(0, 0, 1)
-    local RollErr = -atan(Up0:y(), Up0:z())
+    local RollErr = atan(Up0:y(), Up0:z())
     
-    # Control
-    local Rot = vec(RollErr, PitchErr, YawErr)
-    local Rot0 = vec(0, 0, 0)
-    local Torque = calc_pid_3d(RotPID, Rot, Rot0)
-    Base:applyTorque(Torque)
+    return vec(RollErr, PitchErr, YawErr)
+}   
+
+
+function loop()
+{
+    rot_control(calc_orientation_error_target(Player:pos()))
 }
 
 if(first()) {
