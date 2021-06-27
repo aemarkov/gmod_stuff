@@ -1,7 +1,7 @@
 @name killer_baths
 @inputs W S A D
 @outputs
-@persist MovePID:table RotPID:table
+@persist MovePID:table RotPID:table MaxForce:number
 @trigger 
 
 
@@ -9,7 +9,6 @@ interval(10)
 
 Me = entity()
 Base = Me:isWeldedTo()
-Player = owner()
 
 ##############################################################
 # PID
@@ -70,9 +69,8 @@ function setup()
     print("Setup")
     MovePID = init_pid_3d(100, 0, 30)
     RotPID = init_pid_3d(10000, 0, 10)
-
-    Target = owner() #get_target()
-    print("Target: ", Target)
+	
+	MaxForce = 100000
 }
 
 
@@ -127,12 +125,16 @@ function pos_control(Target:vector)
     local MyPos = Base:pos()
     local PosErr = MyPos - Target
 	local Force = calc_pid_3d(MovePID, -PosErr, MyPos)
+    local ForceM = Force:length()
+    if (ForceM > MaxForce) {
+        Force = Force / ForceM * MaxForce
+    }
     Base:applyForce(Force)
 }
 
 
 function loop()
-{   
+{
     rot_control(Player:pos())
     pos_control(Player:pos())
 }
