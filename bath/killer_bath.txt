@@ -1,6 +1,6 @@
 @name killer_baths
 @inputs W S A D
-@outputs 
+@outputs
 @persist MovePID:table RotPID:table
 @trigger 
 
@@ -68,22 +68,13 @@ function vector calc_pid_3d(PID:table, Err:vector, X:vector)
 function setup()
 {
     print("Setup")
-    #MovePID = init_pid_3d(1, 0, 0)
-    #RotPID = init_pid_3d(50000, 0, -30000)
+    MovePID = init_pid_3d(100, 0, 30)
     RotPID = init_pid_3d(10000, 0, 10)
+
+    Target = owner() #get_target()
+    print("Target: ", Target)
 }
 
-
-# Rotation PID-control
-function rot_control(OrientationErr:vector)
-{
-    # Note: 
-    # I don't use Error and Value (for differentiation) for orientation control, just Error
-    # So, controllable value - error, targer always (0, 0, 0)
-    # I tried to use actual angles for D but not works
-    local Torque = calc_pid_3d(RotPID, -OrientationErr, OrientationErr)
-    Base:applyTorque(Torque)
-}   
 
 # Calculate orientation error between current entity Forwared direction target point
 # This error function is used to make target aim given point
@@ -117,10 +108,33 @@ function vector calc_orientation_error_target(Target:vector)
     return vec(RollErr, PitchErr, YawErr)
 }   
 
+# Rotation PID-control
+function rot_control(Target:vector)
+{
+    local OrientationErr = calc_orientation_error_target(Target)
+    
+    # Note: 
+    # I don't use Error and Value (for differentiation) for orientation control, just Error
+    # So, controllable value - error, targer always (0, 0, 0)
+    # I tried to use actual angles for D but not works
+    local Torque = calc_pid_3d(RotPID, -OrientationErr, OrientationErr)
+    Base:applyTorque(Torque)
+}
+
+
+function pos_control(Target:vector)
+{
+    local MyPos = Base:pos()
+    local PosErr = MyPos - Target
+	local Force = calc_pid_3d(MovePID, -PosErr, MyPos)
+    Base:applyForce(Force)
+}
+
 
 function loop()
-{
-    rot_control(calc_orientation_error_target(Player:pos()))
+{   
+    rot_control(Player:pos())
+    pos_control(Player:pos())
 }
 
 if(first()) {
